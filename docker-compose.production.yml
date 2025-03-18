@@ -1,0 +1,68 @@
+volumes:
+  pg_data:
+  media:
+  static:
+  static_frontend:
+
+services:
+  postgres:
+    image: postgres:13
+    container_name: postgres
+    env_file: .env
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - "kittygram_network"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-U", "postgres"]
+      interval: 30s
+      timeout: 60s
+      retries: 5
+      start_period: 30s
+    restart: always
+
+  backend:
+    image: dupreeh/kittygram_backend:latest
+    container_name: backend
+    env_file: .env
+    volumes:
+      - media:/app/media
+      - static:/app/collected_static
+    networks:
+      - "kittygram_network"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+
+  frontend:
+    image: dupreeh/kittygram_frontend:latest
+    container_name: frontend
+    env_file: .env
+    volumes:
+      - static_frontend:/app/build
+    networks:
+      - "kittygram_network"
+    depends_on:
+      - backend
+    restart: always
+
+  gateway:
+    image: dupreeh/kittygram_gateway:latest
+    container_name: gateway
+    env_file: .env
+    volumes:
+      - media:/var/www/media
+      - static:/usr/share/nginx/html/backend
+      - static_frontend:/usr/share/nginx/html/frontend
+    ports:
+      - "80:80"
+    networks:
+      - "kittygram_network"
+    depends_on:
+      - frontend
+    restart: always
+
+networks:
+  kittygram_network:
+    driver: "bridge"

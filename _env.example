@@ -1,3 +1,8 @@
-POSTGRES_DB=kittygram
-POSTGRES_USER=kittygram_user
-POSTGRES_PASSWORD=kittygram_password
+POSTGRES_DB="postgres"
+POSTGRES_USER="postgres"
+POSTGRES_PASSWORD="postgres"
+POSTGRES_HOST="postgres"
+POSTGRES_PORT="5432"
+SECRET_KEY="key"
+DEBUG=False
+ALLOWED_HOSTS="*"

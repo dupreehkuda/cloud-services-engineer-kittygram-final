@@ -1,0 +1,162 @@
+name: "Build & Test & Deploy"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  pep8_check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Install python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install flake
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8==7.1.1 flake8-isort==6.0.0 setuptools==75.8.0
+      - name: Start test PEP8 with flake
+        working-directory: backend
+        run: python -m flake8 .
+
+  build_and_push_containers:
+    runs-on: ubuntu-latest
+    needs: pep8_check
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Install Docker
+        uses: docker/setup-buildx-action@v2
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - name: Push Images to DockerHub Nginx
+        uses: docker/build-push-action@v4
+        with:
+          context: ./nginx/
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/kittygram_gateway:latest
+      - name: Push Images to DockerHub Nginx
+        uses: docker/build-push-action@v4
+        with:
+          context: ./nginx/
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/kittygram_gateway:latest
+      - name: Push Images to DockerHub Backend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./backend/
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/kittygram_backend:latest
+      - name: Push Images to DockerHub Frondend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend/
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/kittygram_frontend:latest
+
+  deploy_kittygram:
+    runs-on: ubuntu-latest
+    needs: build_and_push_containers
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Copy compose file to remote host
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "docker-compose.production.yml"
+          target: "kittygram"
+      - name: Create .env file
+        run: |
+          touch .env
+          echo "POSTGRES_HOST=${{ secrets.POSTGRES_HOST }}" >> .env
+          echo "POSTGRES_PORT=${{ secrets.POSTGRES_PORT }}" >> .env
+          echo "POSTGRES_DB=${{ secrets.POSTGRES_DB }}" >> .env
+          echo "POSTGRES_USER=${{ secrets.POSTGRES_USER }}" >> .env
+          echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> .env
+          echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" >> .env
+      - name: Create environment file
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          passphrase: ${{ secrets.DEPLOY_SSH_PASSPHRASE }}
+          source: ".env"
+          target: "kittygram"
+      - name: Deploy kittygram
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          passphrase: ${{ secrets.DEPLOY_SSH_PASSPHRASE }}
+          script: |
+            cd kittygram
+            sudo docker compose -f docker-compose.production.yml pull
+            sudo docker compose -f docker-compose.production.yml down
+            sudo docker compose -f docker-compose.production.yml up -d
+            sudo docker compose -f docker-compose.production.yml exec backend python manage.py migrate
+            sudo docker compose -f docker-compose.production.yml exec backend python manage.py collectstatic --noinput
+
+  autotests:
+    runs-on: ubuntu-latest
+    needs: deploy_kittygram
+    env:
+      POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+      POSTGRES_PORT: ${{ secrets.POSTGRES_PORT }}
+      POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Install Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.9
+      - name: Install setuptools and wheel
+        run: |
+          python -m pip install --upgrade setuptools wheel pip
+      - name: Install Cython
+        run: |
+          python -m pip install cython
+      - name: Install system dependencies for building packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libpq-dev python3-dev
+      - name: Install requirements
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Start autotests
+        run: pytest
+
+  telegram_notificaion:
+    runs-on: ubuntu-latest
+    needs: autotests
+    steps:
+      - name: Send Telegram message
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          message: |
+            Успешно проведены тесты и деплой пользователем ${{ github.actor }}!
+            Сообщение коммита: ${{ github.event.commits[0].message }}
+
+            Ознакомиться с последим изменением: https://github.com/${{ github.repository }}/commit/${{github.sha}}
