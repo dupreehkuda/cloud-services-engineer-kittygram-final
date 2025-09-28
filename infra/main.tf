@@ -65,7 +65,7 @@ resource "yandex_compute_instance" "kittygram_vm" {
     }
 
     metadata = {
-        user-data = "${file("cloud-init.yml")}"
+        user-data = templatefile("./cloud-init.yml", { USER = var.ycloud_vm_user, vm_ssh_key = var.ycloud_vm_ssh_key }),
         ssh-keys  = var.ycloud_vm_ssh_key
     }
 }

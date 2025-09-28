@@ -28,6 +28,11 @@ variable "ycloud_vm_ssh_key" {
     type        = string
 }
 
+variable "ycloud_vm_user" {
+    description = "User for Virtual Machine"
+    type        = string
+}
+
 variable "yclod_subnet" {
     description = "CIDR For Subnet Yandex Cloud"
     type        = list(string)
