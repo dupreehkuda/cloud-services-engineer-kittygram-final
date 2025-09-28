@@ -1,4 +1,4 @@
-name: "KittyGram workflow"
+name: "Build & Test & Deploy"
 
 on:
   push:
@@ -17,7 +17,7 @@ jobs:
       - name: Install python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: '3.13'
       - name: Install flake
         run: |
           python -m pip install --upgrade pip
@@ -93,7 +93,6 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          passphrase: ${{ secrets.DEPLOY_SSH_PASSPHRASE }}
           source: ".env"
           target: "kittygram"
       - name: Deploy kittygram
@@ -102,7 +101,6 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          passphrase: ${{ secrets.DEPLOY_SSH_PASSPHRASE }}
           script: |
             cd kittygram
             sudo docker compose -f docker-compose.production.yml pull
